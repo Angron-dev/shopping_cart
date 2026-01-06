@@ -1,63 +1,68 @@
 import { cart as cartRoute, login, register } from '@/routes';
 import { type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import Product from '@/Models/Product';
 import { useEffect, useState } from 'react';
+import Product from '@/Models/Product';
 import ProductApi from '@/API/ProductApi';
+import CartApi from '@/API/CartApi';
 import DynamicTable from '@/components/DynamicTable';
 import LogoutButton from '@/components/LogoutButton';
 import QuantityInput from '@/components/QuantityInput';
 
-export default function HomePage({
-    canRegister = true,
-}: {
-    canRegister?: boolean;
-}) {
-    const [products, setProducts] = useState<Product[]>([]);
-    const [cart, setCart] = useState<(Product & { amount: number })[]>(() => {
-        const stored = sessionStorage.getItem('cart');
-        return stored ? JSON.parse(stored) : [];
-    });
-    const [tempAmounts, setTempAmounts] = useState<Record<number, number>>({});
+export default function HomePage({ canRegister = true }: { canRegister?: boolean }) {
     const { auth } = usePage<SharedData>().props;
 
+    const [products, setProducts] = useState<Product[]>([]);
+    const [cart, setCart] = useState<(Product & { amount: number })[]>([]);
+    const [tempAmounts, setTempAmounts] = useState<Record<number, number>>({});
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
     useEffect(() => {
-        ProductApi.list().then((data) => {
-            setProducts(data);
-        });
+        ProductApi.list()
+            .then(data => setProducts(data))
+            .catch(() => setErrorMessage('Failed to load products'));
     }, []);
 
+    useEffect(() => {
+        if (!auth.user) return;
 
-    const handleAddToCartClick = (product: Product) => {
+        CartApi.index()
+            .then(data => setCart(data))
+            .catch(() => setErrorMessage('Failed to load cart'));
+    }, [auth.user]);
+
+    const handleAddToCartClick = async (product: Product) => {
         if (!auth.user) {
-            router.get('login');
+            router.get(login());
             return;
         }
 
-        const index = cart.findIndex((p) => p.id === product.id);
-        const newCart = [...cart];
+        const inCart = cart.some(p => p.id === product.id);
 
-        if (index === -1) {
-            const qty = tempAmounts[product.id] ?? 1;
-            newCart.push({ ...product, amount: qty });
-        } else {
-            newCart.splice(index, 1);
+        try {
+            if (inCart) {
+                await CartApi.remove(product.id);
+                setCart(prev => prev.filter(p => p.id !== product.id));
+            } else {
+                const amount = tempAmounts[product.id] ?? 1;
+                const addedItem = await CartApi.update(product.id, amount);
+                setCart(prev => [...prev, { ...product, amount: addedItem.amount }]);
+            }
+        } catch {
+            setErrorMessage('Failed to update cart');
         }
-
-        setCart(newCart);
-        sessionStorage.setItem('cart', JSON.stringify(newCart));
     };
 
-    const handleAmountChangeInCart = (product: Product, value: number) => {
-        value = Math.max(1, value);
-        const index = cart.findIndex((p) => p.id === product.id);
-        if (index === -1) return;
-
-        const newCart = [...cart];
-        newCart[index].amount = value;
-
-        setCart(newCart);
-        sessionStorage.setItem('cart', JSON.stringify(newCart));
+    const handleAmountChangeInCart = async (product: Product, value: number) => {
+        value = Math.max(1, Math.min(value, product.stock_quantity));
+        try {
+            const updatedItem = await CartApi.update(product.id, value);
+            setCart(prev =>
+                prev.map(p => (p.id === product.id ? { ...p, amount: updatedItem.amount } : p))
+            );
+        } catch {
+            setErrorMessage('Failed to update quantity');
+        }
     };
 
     const columns = [
@@ -69,7 +74,7 @@ export default function HomePage({
         {
             header: 'Price',
             key: 'price',
-            render: (product: Product) => product.price +  " $",
+            render: (product: Product) => `${product.price} $`,
         },
         {
             header: 'Stock',
@@ -83,10 +88,12 @@ export default function HomePage({
                 <QuantityInput
                     productId={product.id}
                     stockQuantity={product.stock_quantity}
-                    cartAmount={cart.find((c) => c.id === product.id)?.amount}
+                    cartAmount={cart.find(c => c.id === product.id)?.amount}
                     tempAmount={tempAmounts[product.id]}
-                    onChangeInCart={(val) => handleAmountChangeInCart(product, val)}
-                    onChangeTemp={(val) => setTempAmounts((prev) => ({ ...prev, [product.id]: val }))}
+                    onChangeInCart={val => handleAmountChangeInCart(product, val)}
+                    onChangeTemp={val =>
+                        setTempAmounts(prev => ({ ...prev, [product.id]: val }))
+                    }
                 />
             ),
         },
@@ -94,14 +101,11 @@ export default function HomePage({
             header: '',
             key: 'action',
             render: (product: Product) => {
-                const inCart = cart.some((p) => p.id === product.id);
-
+                const inCart = cart.some(p => p.id === product.id);
                 return (
                     <button
                         className={`rounded-full px-4 py-2 font-bold text-white ${
-                            inCart
-                                ? 'bg-red-500 hover:bg-red-700'
-                                : 'bg-blue-500 hover:bg-blue-700'
+                            inCart ? 'bg-red-500 hover:bg-red-700' : 'bg-blue-500 hover:bg-blue-700'
                         }`}
                         onClick={() => handleAddToCartClick(product)}
                     >
@@ -121,6 +125,7 @@ export default function HomePage({
                     rel="stylesheet"
                 />
             </Head>
+
             <div className="flex min-h-screen flex-col items-center bg-[#FDFDFC] p-6 text-[#1b1b18] lg:justify-center lg:p-8 dark:bg-[#0a0a0a]">
                 <header className="mb-6 w-full max-w-[335px] text-sm not-has-[nav]:hidden lg:max-w-4xl">
                     <nav className="flex items-center justify-end gap-4">
@@ -154,11 +159,18 @@ export default function HomePage({
                         )}
                     </nav>
                 </header>
+
                 <div className="flex w-full items-center justify-center opacity-100 transition-opacity duration-750 lg:grow starting:opacity-0">
                     <main className="flex w-full max-w-[335px] flex-col-reverse lg:max-w-4xl lg:flex-row">
                         <DynamicTable columns={columns} data={products} />
                     </main>
                 </div>
+
+                {errorMessage && (
+                    <p className="text-center mt-5 text-red-500 border border-red-500 rounded-sm px-5 py-2 w-fit mx-auto">
+                        {errorMessage}
+                    </p>
+                )}
             </div>
         </>
     );

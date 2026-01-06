@@ -4,14 +4,13 @@ This repository contains a **recruitment / technical assignment project** built 
 
 The goal of this project is to demonstrate:
 
-* clean backend architecture
-* transactional business logic
-* proper frontend state handling
-* secure authentication flows
-* meaningful automated tests
+* Clean backend architecture
+* Transactional business logic
+* Proper frontend state handling
+* Secure authentication flows
+* Meaningful automated tests
 
 ---
-
 
 ## 🧰 Tech Stack
 
@@ -37,11 +36,13 @@ The goal of this project is to demonstrate:
 ## 📦 Implemented Features
 
 * 📋 Product listing endpoint (read-only)
-* 🛒 Client-side cart stored in `sessionStorage`
+* 🛒 Cart fully stored and managed in backend (`cart_items`) per authenticated user
 * 🔢 Quantity control with stock validation
 * 💳 Purchase process using database transactions
-* 📉 Automatic stock decrement with row locking
+* 📉 Automatic stock decrement with row-level locking
 * ✉️ Email notification when product stock is low
+* 🧹 Items removed from cart after successful purchase
+* 💰 User balance validated and updated after purchase
 * 🔐 Secure logout using POST + CSRF protection
 * 🧪 Backend feature tests covering critical flows
 
@@ -55,8 +56,6 @@ The goal of this project is to demonstrate:
 git clone https://github.com/your-repo/shopping_cart.git
 cd shopping_cart
 ```
-
----
 
 ### 2️⃣ Backend setup (Laravel)
 
@@ -130,11 +129,13 @@ Feature tests are preferred for controller behavior to ensure realistic request�
 
 ## 🧠 Architectural Notes
 
-* Controllers are kept thin and focused on HTTP concerns
-* Business logic can be extracted into Service classes if the domain grows
-* Database operations are wrapped in transactions
-* Concurrency is handled using row-level locks (`lockForUpdate`)
-* Frontend components are fully typed using TypeScript
+- Controllers are kept thin and focused on HTTP concerns
+- Business logic can be extracted into Service classes if the domain grows
+- Database operations are wrapped in transactions
+- Concurrency is handled using row-level locks (lockForUpdate)
+- Cart and purchase flows are per authenticated user
+- Frontend components are fully typed using TypeScript
+- Frontend no longer relies on sessionStorage – all cart actions are persisted in the backend
 
 ---
 

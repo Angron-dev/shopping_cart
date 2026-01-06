@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\TransactionRequest;
 use App\Mail\LowStockMail;
+use App\Models\CartItem;
 use App\Models\Product;
 use App\Models\Transaction;
 use App\Models\User;
@@ -63,6 +64,7 @@ class TransactionController extends Controller
             }
 
             $user->decrement('balance', $totalCost);
+            CartItem::where('user_id', $user->id)->delete();
         });
 
         return response()->json([

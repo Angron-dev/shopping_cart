@@ -1,46 +1,54 @@
-
 import { type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { useState } from 'react';
-import Product from '@/Models/Product';
+import { useEffect, useState } from 'react';
+import type Cart from '@/Models/Cart';
 import DynamicTable from '@/components/DynamicTable';
 import TransactionApi from '@/API/TransactionApi';
 import LogoutButton from '@/components/LogoutButton';
 import QuantityInput from '@/components/QuantityInput';
+import CartApi from '@/API/CartApi';
 
-
-export default function Cart() {
+export default function CartPage() {
     const { auth } = usePage<SharedData>().props;
+    const [user, setUser] = useState(auth.user);
+    const [cart, setCart] = useState<Cart[]>([]);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
-    const [user, setUser] = useState(auth.user);
-    const [tempAmounts, setTempAmounts] = useState<Record<number, number>>({});
-    const [cart, setCart] = useState<(Product & { amount: number })[]>(() => {
-        const stored = sessionStorage.getItem('cart');
-        return stored ? JSON.parse(stored) : [];
-    });
 
-    const handleRemoveFromCart = (product: Product) => {
-        const newCart = cart.filter((p) => p.id !== product.id);
-        setCart(newCart);
-        sessionStorage.setItem('cart', JSON.stringify(newCart));
+    useEffect(() => {
+        if (!auth.user) return;
+        CartApi.index()
+            .then((data) => setCart(data))
+            .catch(() => setErrorMessage('Failed to load cart'));
+    }, [auth.user]);
+
+    const handleAmountChangeInCart = async (item: Cart, value: number) => {
+        value = Math.max(1, Math.min(value, item.product.stock_quantity));
+        try {
+            const updatedItem = await CartApi.update(item.product_id, value);
+            setCart((prev) =>
+                prev.map((p) =>
+                    p.id === item.id ? { ...p, amount: updatedItem.amount } : p,
+                ),
+            );
+        } catch {
+            setErrorMessage('Failed to update quantity');
+        }
     };
 
-    const handleAmountChangeInCart = (product: Product, value: number) => {
-        value = Math.max(1, value);
-        const index = cart.findIndex((p) => p.id === product.id);
-        if (index === -1) return;
-
-        const newCart = [...cart];
-        newCart[index].amount = value;
-
-        setCart(newCart);
-        sessionStorage.setItem('cart', JSON.stringify(newCart));
+    const handleRemoveFromCart = async (item: Cart) => {
+        try {
+            await CartApi.remove(item.product_id);
+            setCart((prev) => prev.filter((p) => p.id !== item.id));
+        } catch {
+            setErrorMessage('Failed to remove product from cart');
+        }
     };
 
     const handlePurchaseClick = async () => {
         setErrorMessage(null);
         setMessage(null);
+
         if (!auth.user) {
             router.get('login');
             return;
@@ -53,23 +61,24 @@ export default function Cart() {
 
         try {
             const payload = cart.map((item) => ({
-                product_id: item.id,
+                product_id: item.product_id,
                 amount: item.amount,
-                user_id: auth.user.id,
+                user_id: auth.user!.id,
             }));
 
             const response = await TransactionApi.purchase(payload);
 
             setCart([]);
-            sessionStorage.removeItem('cart');
             setMessage(response.message);
-            setUser(prev => prev ? { ...prev, balance: response.balance } : prev);
+            setUser((prev) =>
+                prev ? { ...prev, balance: response.balance } : prev,
+            );
+
         } catch (error: any) {
             const message =
                 error?.response?.data?.errors?.balance?.[0] ||
                 error?.response?.data?.message ||
                 'Something went wrong during purchase';
-
             setErrorMessage(message);
         }
     };
@@ -77,7 +86,7 @@ export default function Cart() {
     return (
         <>
             <Head title="Cart" />
-            <div className="container flex min-h-screen flex-col items-center bg-[#FDFDFC] p-6 text-[#1b1b18] lg:justify-center lg:p-8 dark:bg-[#0a0a0a]  mx-auto">
+            <div className="container flex flex-col items-center bg-[#FDFDFC] p-6 text-[#1b1b18] lg:justify-center lg:p-8 dark:bg-[#0a0a0a]  mx-auto">
                 <header className="mb-6 w-full max-w-[335px] text-sm not-has-[nav]:hidden lg:max-w-4xl">
                     <nav className="flex items-center justify-end gap-4">
                         {auth.user && (
@@ -86,7 +95,7 @@ export default function Cart() {
                                     User balance: {user.balance} $
                                 </span>
                                 <Link
-                                    href='/'
+                                    href="/"
                                     className="inline-block rounded-sm border border-[#19140035] px-5 py-1.5 text-sm leading-normal text-[#1b1b18] hover:border-[#1915014a] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:hover:border-[#62605b]"
                                 >
                                     Home Page
@@ -96,63 +105,89 @@ export default function Cart() {
                         )}
                     </nav>
                 </header>
-                <div className="flex flex-col w-full items-center justify-center opacity-100 transition-opacity duration-750 lg:grow starting:opacity-0">
-                    <main className="flex w-full max-w-[335px] flex-col lg:max-w-4xl text-center">
-                        <h1 className="text-2xl font-bold text-gray-50 mb-4">Cart</h1>
-                        {message && <p className='text-center mb-5 text-green-500 border border-green-500 rounded-sm px-5 py-2 w-fit mx-auto'>{message}</p>}
-                        <DynamicTable
-                            data={cart}
-                            columns={[
-                                {
-                                    header: 'Name',
-                                    key: 'name',
-                                    render: (p) => p.name,
-                                },
-                                {
-                                    header: 'Product price',
-                                    key: 'price',
-                                    render: (p) => p.price + " $",
-                                },
-                                {
-                                    header: 'Amount',
-                                    key: 'amount',
-                                    render: (p) => (
-                                        <QuantityInput
-                                            productId={p.id}
-                                            stockQuantity={p.stock_quantity}
-                                            cartAmount={cart.find((c) => c.id === p.id)?.amount}
-                                            tempAmount={tempAmounts[p.id]}
-                                            onChangeInCart={(val) => handleAmountChangeInCart(p, val)}
-                                            onChangeTemp={(val) => setTempAmounts((prev) => ({ ...prev, [p.id]: val }))}
-                                        />
-                                    ),
-                                },
-                                {
-                                    header: 'Total',
-                                    key: 'total',
-                                    render: (p) => p.price * p.amount + " $",
-                                },
-                                {
-                                    header: '',
-                                    key: 'action',
-                                    render: (p) => (
-                                        <button
-                                            className="rounded-full bg-red-500 px-4 py-2 text-white hover:bg-red-700"
-                                            onClick={() => handleRemoveFromCart(p)}
-                                        >
-                                            Remove
-                                        </button>
-                                    ),
-                                },
-                            ]}
-                        />
-                        <p className='text-center mt-5 text-gray-50'>Total price: {cart.reduce((total, p) => total + p.price * p.amount, 0)} $</p>
-                        {errorMessage && <p className='text-center mt-5 text-red-500 border border-red-500 rounded-sm px-5 py-2 w-fit mx-auto'>{errorMessage}</p>}
-                        <button className='mt-5 rounded-full bg-green-500 px-4 py-2 text-white hover:bg-green-700 w-fit mx-auto' onClick={handlePurchaseClick}>Purchase</button>
-                    </main>
-                </div>
+
+                <main className="flex w-full max-w-[335px] flex-col text-center lg:max-w-4xl">
+                    <h1 className="mb-4 text-2xl font-bold text-gray-50">
+                        Cart
+                    </h1>
+
+                    {message && (
+                        <p className="mx-auto mb-5 w-fit rounded-sm border border-green-500 px-5 py-2 text-center text-green-500">
+                            {message}
+                        </p>
+                    )}
+                    <DynamicTable
+                        data={cart}
+                        columns={[
+                            {
+                                header: 'Name',
+                                key: 'name',
+                                render: (item) => item.product.name,
+                            },
+                            {
+                                header: 'Product price',
+                                key: 'price',
+                                render: (item) => `${item.product.price} $`,
+                            },
+                            {
+                                header: 'Amount',
+                                key: 'amount',
+                                render: (item) => (
+                                    <QuantityInput
+                                        productId={item.product_id}
+                                        stockQuantity={item.product.stock_quantity}
+                                        cartAmount={item.amount}
+                                        onChangeInCart={(val) =>
+                                            handleAmountChangeInCart(item, val)
+                                        }
+                                    />
+                                ),
+                            },
+                            {
+                                header: 'Total',
+                                key: 'total',
+                                render: (item) =>
+                                    `${item.product.price * item.amount} $`,
+                            },
+                            {
+                                header: '',
+                                key: 'action',
+                                render: (item) => (
+                                    <button
+                                        className="rounded-full bg-red-500 px-4 py-2 text-white hover:bg-red-700"
+                                        onClick={() => handleRemoveFromCart(item)}
+                                    >
+                                        Remove
+                                    </button>
+                                ),
+                            },
+                        ]}
+                    />
+
+                    <p className="mt-5 text-center text-gray-50">
+                        Total price:{' '}
+                        {cart.reduce(
+                            (total, item) =>
+                                total + item.product.price * item.amount,
+                            0,
+                        )}{' '}
+                        $
+                    </p>
+
+                    {errorMessage && (
+                        <p className="mx-auto mt-5 w-fit rounded-sm border border-red-500 px-5 py-2 text-center text-red-500">
+                            {errorMessage}
+                        </p>
+                    )}
+
+                    <button
+                        className="mx-auto mt-5 w-fit rounded-full bg-green-500 px-4 py-2 text-white hover:bg-green-700"
+                        onClick={handlePurchaseClick}
+                    >
+                        Purchase
+                    </button>
+                </main>
             </div>
         </>
-
     );
 }
