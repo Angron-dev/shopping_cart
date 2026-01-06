@@ -53,7 +53,7 @@ The goal of this project is to demonstrate:
 
 ```bash
 git clone https://github.com/your-repo/shopping_cart.git
-cd shop
+cd shopping_cart
 ```
 
 ---
