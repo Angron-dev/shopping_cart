@@ -27,10 +27,15 @@ export default function HomePage({ canRegister = true }: { canRegister?: boolean
         if (!auth.user) return;
 
         CartApi.index()
-            .then(data => setCart(data))
+            .then(data => {
+                const mapped = data.map((item: any) => ({
+                    ...item.product,
+                    amount: item.amount,
+                }));
+                setCart(mapped);
+            })
             .catch(() => setErrorMessage('Failed to load cart'));
     }, [auth.user]);
-
     const handleAddToCartClick = async (product: Product) => {
         if (!auth.user) {
             router.get(login());
