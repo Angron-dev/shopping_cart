@@ -13,6 +13,7 @@ export default function Cart() {
     const { auth } = usePage<SharedData>().props;
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
+    const [user, setUser] = useState(auth.user);
     const [tempAmounts, setTempAmounts] = useState<Record<number, number>>({});
     const [cart, setCart] = useState<(Product & { amount: number })[]>(() => {
         const stored = sessionStorage.getItem('cart');
@@ -61,11 +62,15 @@ export default function Cart() {
 
             setCart([]);
             sessionStorage.removeItem('cart');
-
             setMessage(response.message);
-        } catch (error) {
-            console.error(error);
-            setErrorMessage('Something went wrong during purchase');
+            setUser(prev => prev ? { ...prev, balance: response.balance } : prev);
+        } catch (error: any) {
+            const message =
+                error?.response?.data?.errors?.balance?.[0] ||
+                error?.response?.data?.message ||
+                'Something went wrong during purchase';
+
+            setErrorMessage(message);
         }
     };
 
@@ -77,6 +82,9 @@ export default function Cart() {
                     <nav className="flex items-center justify-end gap-4">
                         {auth.user && (
                             <>
+                                <span className='text-gray-50 px-2 py-2 border-gray-600 border-1 rounded-sm'>
+                                    User balance: {user.balance} $
+                                </span>
                                 <Link
                                     href='/'
                                     className="inline-block rounded-sm border border-[#19140035] px-5 py-1.5 text-sm leading-normal text-[#1b1b18] hover:border-[#1915014a] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:hover:border-[#62605b]"

@@ -5,7 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Product;
 use Illuminate\Console\Command;
 
-class add_products extends Command
+class AddProduct extends Command
 {
     /**
      * The name and signature of the console command.

@@ -8,7 +8,7 @@ use App\Http\Requests\TransactionRequest;
 use App\Mail\LowStockMail;
 use App\Models\Product;
 use App\Models\Transaction;
-use Illuminate\Http\Request;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Symfony\Component\HttpFoundation\Response;
@@ -17,9 +17,17 @@ class TransactionController extends Controller
 {
     public function purchase(TransactionRequest $request): Response
     {
-        DB::transaction(function () use ($request) {
-            foreach ($request['cart'] as $item) {
-                $product = Product::lockForUpdate()->find($item['product_id']);
+        $cart = $request->validated()['cart'];
+        $userId = $cart[0]['user_id'];
+
+        $user = User::lockForUpdate()->findOrFail($userId);
+
+        DB::transaction(function () use ($cart, $user) {
+
+            $totalCost = 0;
+
+            foreach ($cart as $item) {
+                $product = Product::lockForUpdate()->findOrFail($item['product_id']);
 
                 if ($product->stock_quantity < $item['amount']) {
                     throw new \RuntimeException(
@@ -27,8 +35,18 @@ class TransactionController extends Controller
                     );
                 }
 
+                $totalCost += $product->price * $item['amount'];
+            }
+
+            if ($user->balance < $totalCost) {
+                throw new \RuntimeException('Insufficient user balance');
+            }
+
+            foreach ($cart as $item) {
+                $product = Product::lockForUpdate()->findOrFail($item['product_id']);
+
                 Transaction::create([
-                    'user_id'    => $item['user_id'],
+                    'user_id' => $user->id,
                     'product_id' => $product->id,
                     'amount' => $item['amount'],
                 ]);
@@ -43,10 +61,13 @@ class TransactionController extends Controller
                     }
                 }
             }
+
+            $user->decrement('balance', $totalCost);
         });
 
         return response()->json([
             'message' => 'Purchase completed successfully',
+            'balance' => $user->balance,
         ], Response::HTTP_CREATED);
     }
 }

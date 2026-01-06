@@ -21,8 +21,8 @@ class TransactionControllerTest extends TestCase
     {
         Mail::fake();
 
-        $user = User::factory()->create();
-        $product = Product::factory()->create(['stock_quantity' => 10]);
+        $user = User::factory()->create(['balance' => 100]);
+        $product = Product::factory()->create(['stock_quantity' => 10, 'price' => 20]);
 
         $cart = [
             [
@@ -54,8 +54,8 @@ class TransactionControllerTest extends TestCase
     {
         Mail::fake();
 
-        $user = User::factory()->create();
-        $product = Product::factory()->create(['stock_quantity' => 5]);
+        $user = User::factory()->create(['balance' => 100]);
+        $product = Product::factory()->create(['stock_quantity' => 5, 'price' => 20]);
 
         $cart = [
             ['product_id' => $product->id, 'amount' => 1, 'user_id' => $user->id]
@@ -85,6 +85,76 @@ class TransactionControllerTest extends TestCase
     {
         $response = $this->postJson(self::API_ENDPOINT, ['cart' => []]);
         $response->assertStatus(422);
+    }
+
+    public function test_user_can_purchase_if_balance_is_sufficient()
+    {
+        Mail::fake();
+
+        $user = User::factory()->create([
+            'balance' => 100,
+        ]);
+
+        $product = Product::factory()->create([
+            'price' => 20,
+            'stock_quantity' => 10,
+        ]);
+
+        $cart = [
+            ['product_id' => $product->id, 'amount' => 3, 'user_id' => $user->id],
+        ];
+
+        $response = $this->actingAs($user)
+            ->postJson(self::API_ENDPOINT, ['cart' => $cart]);
+
+        $response->assertStatus(201)
+            ->assertJson([
+                'message' => 'Purchase completed successfully',
+                'balance' => 40,
+            ]);
+
+        $this->assertDatabaseHas('transactions', [
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'amount' => 3,
+        ]);
+
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'stock_quantity' => 7,
+        ]);
+    }
+
+    public function test_purchase_fails_if_balance_is_insufficient()
+    {
+        Mail::fake();
+
+        $user = User::factory()->create([
+            'balance' => 10,
+        ]);
+
+        $product = Product::factory()->create([
+            'price' => 20,
+            'stock_quantity' => 10,
+        ]);
+
+        $cart = [
+            ['product_id' => $product->id, 'amount' => 1, 'user_id' => $user->id],
+        ];
+
+        $response = $this->actingAs($user)
+            ->postJson(self::API_ENDPOINT, ['cart' => $cart]);
+
+        $response->assertStatus(500);
+        $this->assertDatabaseMissing('transactions', [
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+        ]);
+
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'stock_quantity' => 10,
+        ]);
     }
 
 }
